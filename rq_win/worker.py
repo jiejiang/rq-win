@@ -7,7 +7,7 @@ import rq
 import rq.job
 import rq.compat
 import rq.worker
-
+from rq.job import Job, JobStatus
 
 class WindowsWorker(rq.Worker):
     """
@@ -31,6 +31,13 @@ class WindowsWorker(rq.Worker):
         self.log.info('Using rq_win.WindowsWorker (experimental)')
         return super(WindowsWorker, self).work(burst)
 
+    def execute_job(self, job):
+        """Spawns a work horse to perform the actual work and passes it a job.
+        The worker will wait for the work horse and make sure it executes
+        within the given timeout bounds, or will end the work horse with
+        SIGALRM.
+        """
+        self.fork_and_perform_job(job)
 
     def fork_and_perform_job(self, job):
         """Spawns a work horse to perform the actual work and passes it a job.
@@ -67,7 +74,7 @@ class WindowsWorker(rq.Worker):
             # Pickle the result in the same try-except block since we need to
             # use the same exc handling when pickling fails
             job._result = rv
-            job._status = rq.job.Status.FINISHED
+            job.set_status(JobStatus.FINISHED, pipeline=None)
             job.ended_at = times.now()
 
             result_ttl = job.get_ttl(self.default_result_ttl)
@@ -79,7 +86,8 @@ class WindowsWorker(rq.Worker):
 
         except:
             # Use the public setter here, to immediately update Redis
-            job.status = rq.job.Status.FAILED
+            job.set_status(JobStatus.FAILED, pipeline=None)
+
             self.handle_exception(job, *sys.exc_info())
             return False
 
